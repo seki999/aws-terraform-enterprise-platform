@@ -21,7 +21,7 @@ jobs:
         with:
           terraform_version: 1.15.8
           terraform_wrapper: false
-      - uses: terraform-linters/setup-tflint@v5
+      - uses: terraform-linters/setup-tflint@v6
         with:
           tflint_version: v0.59.1
       - run: terraform fmt -check -recursive
@@ -33,6 +33,7 @@ jobs:
       - run: terraform -chdir=environments/staging validate
       - run: terraform -chdir=environments/prod init -backend=false -input=false
       - run: terraform -chdir=environments/prod validate
+      - run: terraform init -backend=false -input=false
       - run: terraform test
       - run: tflint --init
       - run: tflint --recursive
@@ -41,4 +42,3 @@ jobs:
           directory: .
           quiet: true
           framework: terraform
-
