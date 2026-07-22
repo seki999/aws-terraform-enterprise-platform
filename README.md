@@ -97,7 +97,7 @@ terraform show tfplan
 # terraform apply tfplan
 ```
 
-将输出的 Bucket、KMS ARN 写入各环境本地 `backend.hcl`。S3 Backend 使用 `use_lockfile = true`；不为新项目创建已弃用的 DynamoDB锁表。
+将输出的 Bucket、KMS ARN 写入各环境本地 `backend.hcl`。S3 Backend 使用 `use_lockfile = true`；不为新项目创建已弃用的 DynamoDB 锁表。
 
 ## Dev Plan
 

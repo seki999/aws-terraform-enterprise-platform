@@ -40,6 +40,7 @@
 | `CKV_AWS_272` | 三个 Lambda | Code Signing 依赖组织 Signer Profile 与签名发布流水线 | 生产供应链建立签名、验证与制品准入流程 |
 | `CKV_AWS_285` | Step Functions | 已记录 `ERROR`，并故意关闭执行 Payload 记录以避免敏感数据进入日志 | 按数据分类决定是否使用 `ALL`，配套日志脱敏与访问控制 |
 | `CKV_AWS_309` | API Gateway Route | 实验 Job Route 有意无鉴权 | 生产附加 JWT Authorizer 或 IAM Authorization，并增加拒绝测试 |
+| `CKV_GHA_7` | Terraform Plan GitHub Actions | 手动输入是固定的 `dev/staging/prod` choice，且在进入任何路径或命令前再次通过 shell allowlist 校验 | 若环境扩展，必须同时更新 choice、allowlist、GitHub Environment 与最小权限 Plan Role |
 
 ## 审查规则
 

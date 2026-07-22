@@ -4,17 +4,24 @@ import os
 import signal
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 import boto3
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(message)s")
 logger = logging.getLogger("platform-worker")
 running = True
+HEARTBEAT_FILE = Path(os.getenv("HEALTHCHECK_FILE", "/var/run/worker/heartbeat"))
 
 
 def stop(*_: object) -> None:
     global running
     running = False
+
+
+def write_heartbeat(path: Path = HEARTBEAT_FILE) -> None:
+    """Record that the worker loop is still making progress."""
+    path.touch()
 
 
 def main() -> None:
@@ -25,6 +32,7 @@ def main() -> None:
     dynamodb = boto3.client("dynamodb", region_name=region)
 
     while running:
+        write_heartbeat()
         response = sqs.receive_message(
             QueueUrl=queue_url,
             MaxNumberOfMessages=5,
@@ -55,4 +63,3 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     main()
-
