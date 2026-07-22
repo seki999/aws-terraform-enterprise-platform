@@ -9,18 +9,6 @@ variable "name_prefix" {
   }
 }
 
-variable "log_retention_days" {
-  description = "应用 Log Group 保留天数。"
-  type        = number
-  default     = 7
-  nullable    = false
-
-  validation {
-    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 180, 365], var.log_retention_days)
-    error_message = "log_retention_days 必须是受支持值。"
-  }
-}
-
 variable "enable_github_oidc" {
   description = "是否创建 GitHub Actions OIDC Provider 与 Terraform Plan Role。"
   type        = bool
@@ -68,4 +56,3 @@ variable "tags" {
     error_message = "标签键和值不得为空。"
   }
 }
-

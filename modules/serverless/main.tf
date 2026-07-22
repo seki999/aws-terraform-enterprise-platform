@@ -56,22 +56,6 @@ resource "aws_sqs_queue" "jobs" {
   tags = merge(var.tags, { Name = "${var.name_prefix}-jobs" })
 }
 
-data "aws_iam_policy_document" "dlq_redrive" {
-  count = var.enable_serverless ? 1 : 0
-
-  statement {
-    sid       = "AllowSourceQueue"
-    actions   = ["sqs:SendMessage"]
-    resources = [aws_sqs_queue.dlq[0].arn]
-
-    condition {
-      test     = "ArnEquals"
-      variable = "aws:SourceArn"
-      values   = [aws_sqs_queue.jobs[0].arn]
-    }
-  }
-}
-
 resource "aws_sqs_queue_redrive_allow_policy" "dlq" {
   count = var.enable_serverless ? 1 : 0
 
@@ -434,4 +418,3 @@ resource "aws_cloudwatch_event_target" "daily_health" {
   role_arn = aws_iam_role.events[0].arn
   input    = jsonencode({ job_id = "scheduled-health", created_at = "scheduled", status = "scheduled" })
 }
-

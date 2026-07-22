@@ -33,7 +33,6 @@ module "identity" {
   source = "../identity"
 
   name_prefix        = local.name_prefix
-  log_retention_days = var.log_retention_days
   enable_github_oidc = var.enable_github_oidc
   github_repository  = var.github_repository
   tags               = local.common_tags
