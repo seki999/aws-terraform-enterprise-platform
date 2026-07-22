@@ -170,4 +170,4 @@ CloudFront 只接受该区域的 ACM 证书；ALB 等区域性入口使用主区
 11. [服务参考](docs/10-service-reference.md)
 12. [学习路线](docs/11-learning-guide.md)
 13. [验证报告](docs/12-validation-report.md)
-
+14. [Checkov 例外登记](docs/13-checkov-exceptions.md)

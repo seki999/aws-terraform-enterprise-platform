@@ -51,10 +51,16 @@ resource "aws_db_parameter_group" "postgres" {
     value = "1"
   }
 
+  parameter {
+    name  = "rds.force_ssl"
+    value = "1"
+  }
+
   tags = merge(var.tags, { Name = "${var.name_prefix}-postgres17" })
 }
 
 resource "aws_db_instance" "postgres" {
+  #checkov:skip=CKV_AWS_161:Multi-AZ is environment-controlled and enabled for production; non-production remains single-AZ for cost.
   count = var.enable_rds ? 1 : 0
 
   identifier                      = "${var.name_prefix}-postgres"

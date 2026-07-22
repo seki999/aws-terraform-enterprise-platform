@@ -9,7 +9,8 @@ resource "aws_ecr_repository" "api" {
   }
 
   encryption_configuration {
-    encryption_type = "AES256"
+    encryption_type = "KMS"
+    kms_key         = var.kms_key_arn
   }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-api-ecr" })
@@ -39,6 +40,9 @@ resource "aws_cloudwatch_log_group" "ecs" {
 }
 
 resource "aws_lb" "api" {
+  #checkov:skip=CKV_AWS_150:Deletion protection remains disabled for destroyable lab environments; production promotion must enable it.
+  #checkov:skip=CKV2_AWS_20:The optional lab ALB currently exposes HTTP; ACM-backed HTTPS is a documented production prerequisite.
+  #checkov:skip=CKV2_AWS_28:A regional WAF is an optional paid control; CloudFront WAF is used when the public frontend is enabled.
   count = var.enable_alb ? 1 : 0
 
   name                       = substr("${var.name_prefix}-alb", 0, 32)
@@ -59,6 +63,7 @@ resource "aws_lb" "api" {
 }
 
 resource "aws_lb_target_group" "api" {
+  #checkov:skip=CKV_AWS_378:TLS terminates at the ALB and backend HTTP stays private and security-group scoped.
   count = var.enable_alb ? 1 : 0
 
   name        = substr("${var.name_prefix}-api-tg", 0, 32)
@@ -82,6 +87,8 @@ resource "aws_lb_target_group" "api" {
 }
 
 resource "aws_lb_listener" "http" {
+  #checkov:skip=CKV_AWS_2:The destroyable lab ALB has no regional certificate; production must replace this with an HTTPS listener.
+  #checkov:skip=CKV_AWS_103:TLS policy is not applicable to this HTTP-only lab listener; production must use TLS 1.2 or later.
   count = var.enable_alb ? 1 : 0
 
   load_balancer_arn = aws_lb.api[0].arn

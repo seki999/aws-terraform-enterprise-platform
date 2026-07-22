@@ -324,6 +324,17 @@ variable "logs_kms_key_arn" {
   }
 }
 
+variable "kms_key_arn" {
+  description = "ECR 镜像加密使用的 KMS Key ARN。"
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^arn:", var.kms_key_arn))
+    error_message = "kms_key_arn 必须是 ARN。"
+  }
+}
+
 variable "tags" {
   description = "公共标签。"
   type        = map(string)

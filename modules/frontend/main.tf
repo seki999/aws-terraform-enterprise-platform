@@ -8,6 +8,9 @@ locals {
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "logs" {
+  #checkov:skip=CKV_AWS_144:Access logs remain in-region for the lab; production DR requires a separately governed destination account and region.
+  #checkov:skip=CKV_AWS_145:SSE-S3 is required for legacy S3 and CloudFront log delivery compatibility on this destination bucket.
+  #checkov:skip=CKV2_AWS_62:This bucket is a terminal log sink and has no event-driven consumer.
   bucket        = local.logs_bucket
   force_destroy = false
   tags          = merge(var.tags, { Name = "${var.name_prefix}-access-logs" })
@@ -22,6 +25,7 @@ resource "aws_s3_bucket_public_access_block" "logs" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "logs" {
+  #checkov:skip=CKV2_AWS_65:BucketOwnerPreferred is required by the configured log-delivery ACL workflow.
   bucket = aws_s3_bucket.logs.id
 
   rule {
@@ -46,6 +50,14 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
   }
 }
 
+resource "aws_s3_bucket_versioning" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_lifecycle_configuration" "logs" {
   bucket = aws_s3_bucket.logs.id
 
@@ -56,6 +68,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
 
     expiration {
       days = 90
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
     }
   }
 }
@@ -102,6 +118,8 @@ resource "aws_s3_bucket_policy" "logs" {
 }
 
 resource "aws_s3_bucket" "frontend" {
+  #checkov:skip=CKV_AWS_144:Cross-region replication is a production DR option that requires a second region and KMS key.
+  #checkov:skip=CKV2_AWS_62:Static assets are deployed by CI and do not require object-created notifications.
   bucket        = local.frontend_bucket
   force_destroy = false
   tags          = merge(var.tags, { Name = "${var.name_prefix}-frontend" })
@@ -130,8 +148,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "frontend" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      kms_master_key_id = var.kms_key_arn
+      sse_algorithm     = "aws:kms"
     }
+    bucket_key_enabled = true
   }
 }
 
@@ -157,10 +177,16 @@ resource "aws_s3_bucket_lifecycle_configuration" "frontend" {
     noncurrent_version_expiration {
       noncurrent_days = 90
     }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 }
 
 resource "aws_s3_bucket" "uploads" {
+  #checkov:skip=CKV_AWS_144:Cross-region replication is a production DR option that requires a second region and KMS key.
+  #checkov:skip=CKV2_AWS_62:Upload processing is application-controlled and does not use S3 event notifications.
   bucket        = local.upload_bucket
   force_destroy = false
   tags          = merge(var.tags, { Name = "${var.name_prefix}-uploads" })
@@ -191,6 +217,12 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
   }
 }
 
+resource "aws_s3_bucket_logging" "uploads" {
+  bucket        = aws_s3_bucket.uploads.id
+  target_bucket = aws_s3_bucket.logs.id
+  target_prefix = "s3/uploads/"
+}
+
 resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
   bucket = aws_s3_bucket.uploads.id
 
@@ -207,6 +239,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
     expiration {
       days = 365
     }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 }
 
@@ -221,6 +257,7 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 }
 
 resource "aws_wafv2_web_acl" "cloudfront" {
+  #checkov:skip=CKV2_AWS_31:WAF logging needs a separately retained Firehose destination and is enabled during production promotion.
   count    = var.enable_cloudfront && var.enable_waf ? 1 : 0
   provider = aws.us_east_1
 
@@ -249,6 +286,28 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "${var.name_prefix}-cloudfront-common"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "aws-known-bad-inputs"
+    priority = 20
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name_prefix}-cloudfront-known-bad-inputs"
       sampled_requests_enabled   = true
     }
   }
@@ -306,6 +365,7 @@ resource "aws_acm_certificate_validation" "frontend" {
 }
 
 resource "aws_cloudfront_distribution" "frontend" {
+  #checkov:skip=CKV2_AWS_47:The associated WAF includes AWSManagedRulesKnownBadInputsRuleSet; Checkov cannot resolve the counted cross-provider association.
   count = var.enable_cloudfront ? 1 : 0
 
   enabled             = true
@@ -323,11 +383,12 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   default_cache_behavior {
-    target_origin_id       = "frontend-s3"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD", "OPTIONS"]
-    compress               = true
+    target_origin_id           = "frontend-s3"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD", "OPTIONS"]
+    compress                   = true
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
 
     forwarded_values {
       query_string = false
@@ -360,6 +421,10 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-cloudfront" })
+}
+
+data "aws_cloudfront_response_headers_policy" "security_headers" {
+  name = "Managed-SecurityHeadersPolicy"
 }
 
 data "aws_iam_policy_document" "frontend" {

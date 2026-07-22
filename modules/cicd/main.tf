@@ -3,6 +3,9 @@ data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "artifacts" {
+  #checkov:skip=CKV_AWS_18:Artifacts are short-lived and a separate central access-log bucket is outside this optional CI/CD module.
+  #checkov:skip=CKV_AWS_144:Cross-region replication is a production DR option and requires a separately governed region and key.
+  #checkov:skip=CKV2_AWS_62:Pipeline artifacts are consumed by CodePipeline and do not require S3 event notifications.
   count = var.enable_cicd ? 1 : 0
 
   bucket        = "${var.name_prefix}-artifacts-${var.bucket_suffix}"
@@ -261,4 +264,3 @@ resource "aws_codepipeline" "this" {
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-pipeline" })
 }
-

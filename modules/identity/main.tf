@@ -16,9 +16,62 @@ locals {
   }
 }
 
+data "aws_iam_policy_document" "data_key" {
+  #checkov:skip=CKV_AWS_109:The wildcard applies only to the account root principal in the standard KMS IAM-delegation statement.
+  #checkov:skip=CKV_AWS_111:The wildcard applies only to the account root principal in the standard KMS IAM-delegation statement.
+  #checkov:skip=CKV_AWS_356:KMS key policies require Resource star because the policy is attached to the key itself.
+  statement {
+    sid       = "EnableIamUserPermissions"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${local.partition}:iam::${local.account_id}:root"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "logs_key" {
+  #checkov:skip=CKV_AWS_109:Wildcard actions are limited to account root; the Logs service statement is separately scoped by service and encryption context.
+  #checkov:skip=CKV_AWS_111:Wildcard write actions are limited to account root in the standard KMS IAM-delegation statement.
+  #checkov:skip=CKV_AWS_356:KMS key policies require Resource star; principals and the Logs encryption context provide the boundary.
+  statement {
+    sid       = "EnableIamUserPermissions"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${local.partition}:iam::${local.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid       = "AllowCloudWatchLogs"
+    effect    = "Allow"
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"]
+    resources = ["*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${local.region}.amazonaws.com"]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:${local.partition}:logs:${local.region}:${local.account_id}:log-group:*"]
+    }
+  }
+}
+
 resource "aws_kms_key" "data" {
   description         = "Application data encryption for ${var.name_prefix}"
   enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.data_key.json
   tags                = merge(var.tags, { Name = "${var.name_prefix}-data-kms" })
 }
 
@@ -30,6 +83,7 @@ resource "aws_kms_alias" "data" {
 resource "aws_kms_key" "logs" {
   description         = "Log encryption for ${var.name_prefix}"
   enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.logs_key.json
   tags                = merge(var.tags, { Name = "${var.name_prefix}-logs-kms" })
 }
 
@@ -50,6 +104,7 @@ resource "random_password" "redis" {
 }
 
 resource "aws_secretsmanager_secret" "database" {
+  #checkov:skip=CKV2_AWS_57:Rotation requires an application-specific Lambda and dual-credential rollout; see docs/03-security-design.md.
   name                    = "${var.name_prefix}/database"
   description             = "PostgreSQL credentials for ${var.name_prefix}"
   kms_key_id              = aws_kms_key.data.arn
@@ -66,6 +121,7 @@ resource "aws_secretsmanager_secret_version" "database" {
 }
 
 resource "aws_secretsmanager_secret" "redis" {
+  #checkov:skip=CKV2_AWS_57:Rotation requires coordinated Redis token replacement; see docs/03-security-design.md.
   name                    = "${var.name_prefix}/redis"
   description             = "Redis auth token for ${var.name_prefix}"
   kms_key_id              = aws_kms_key.data.arn
@@ -81,7 +137,8 @@ resource "aws_secretsmanager_secret_version" "redis" {
 resource "aws_ssm_parameter" "log_level" {
   name        = "/${var.name_prefix}/app/log-level"
   description = "Non-sensitive application log level"
-  type        = "String"
+  type        = "SecureString"
+  key_id      = aws_kms_key.data.arn
   value       = "INFO"
   tags        = merge(var.tags, { Name = "${var.name_prefix}-log-level" })
 }

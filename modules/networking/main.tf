@@ -16,6 +16,11 @@ resource "aws_vpc" "this" {
   tags = merge(var.tags, { Name = "${var.name_prefix}-vpc" })
 }
 
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+  tags   = merge(var.tags, { Name = "${var.name_prefix}-default-sg-restricted" })
+}
+
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
   tags   = merge(var.tags, { Name = "${var.name_prefix}-igw" })
@@ -135,12 +140,14 @@ resource "aws_route_table_association" "private_db" {
 }
 
 resource "aws_network_acl" "private_db" {
+  #checkov:skip=CKV2_AWS_1:Subnet associations are declared with subnet_ids on this resource; this is a graph-resolution false positive.
   vpc_id     = aws_vpc.this.id
   subnet_ids = aws_subnet.private_db[*].id
   tags       = merge(var.tags, { Name = "${var.name_prefix}-private-db-nacl" })
 }
 
 resource "aws_network_acl_rule" "private_db_ingress" {
+  #checkov:skip=CKV_AWS_352:The stateless NACL is limited to the VPC CIDR; database and Redis ports are enforced by security groups.
   network_acl_id = aws_network_acl.private_db.id
   rule_number    = 100
   egress         = false
@@ -163,6 +170,8 @@ resource "aws_network_acl_rule" "private_db_egress" {
 }
 
 resource "aws_security_group" "alb" {
+  #checkov:skip=CKV_AWS_260:Port 80 is retained only for the documented lab HTTP entry point and future HTTPS redirect.
+  #checkov:skip=CKV2_AWS_5:The ALB attaches this group through the compute module; Checkov does not resolve the module input edge.
   name        = "${var.name_prefix}-alb-sg"
   description = "Internet ingress to the public ALB"
   vpc_id      = aws_vpc.this.id
@@ -195,6 +204,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "app" {
+  #checkov:skip=CKV2_AWS_5:ECS and EC2 attach this group through compute module inputs; Checkov does not resolve the module edge.
   name        = "${var.name_prefix}-app-sg"
   description = "Application workload traffic"
   vpc_id      = aws_vpc.this.id
@@ -208,17 +218,34 @@ resource "aws_security_group" "app" {
   }
 
   egress {
-    description = "Application outbound traffic"
-    protocol    = "-1"
-    from_port   = 0
-    to_port     = 0
+    description = "HTTPS to AWS APIs and approved internet services"
+    protocol    = "tcp"
+    from_port   = 443
+    to_port     = 443
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "UDP DNS to the VPC resolver"
+    protocol    = "udp"
+    from_port   = 53
+    to_port     = 53
+    cidr_blocks = ["${cidrhost(var.vpc_cidr, 2)}/32"]
+  }
+
+  egress {
+    description = "TCP DNS to the VPC resolver"
+    protocol    = "tcp"
+    from_port   = 53
+    to_port     = 53
+    cidr_blocks = ["${cidrhost(var.vpc_cidr, 2)}/32"]
   }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-app-sg" })
 }
 
 resource "aws_security_group" "database" {
+  #checkov:skip=CKV2_AWS_5:RDS attaches this group through the data module; Checkov does not resolve the module input edge.
   name        = "${var.name_prefix}-database-sg"
   description = "Database traffic from applications"
   vpc_id      = aws_vpc.this.id
@@ -235,6 +262,7 @@ resource "aws_security_group" "database" {
 }
 
 resource "aws_security_group" "redis" {
+  #checkov:skip=CKV2_AWS_5:ElastiCache attaches this group through the data module; Checkov does not resolve the module input edge.
   name        = "${var.name_prefix}-redis-sg"
   description = "Redis TLS traffic from applications"
   vpc_id      = aws_vpc.this.id
@@ -248,6 +276,24 @@ resource "aws_security_group" "redis" {
   }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-redis-sg" })
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_database" {
+  security_group_id            = aws_security_group.app.id
+  referenced_security_group_id = aws_security_group.database.id
+  description                  = "PostgreSQL to the database tier"
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_redis" {
+  security_group_id            = aws_security_group.app.id
+  referenced_security_group_id = aws_security_group.redis.id
+  description                  = "TLS Redis to the cache tier"
+  ip_protocol                  = "tcp"
+  from_port                    = 6379
+  to_port                      = 6379
 }
 
 resource "aws_security_group" "endpoints" {
@@ -301,10 +347,12 @@ resource "aws_vpc_endpoint" "interface" {
 }
 
 resource "aws_cloudwatch_log_group" "flow" {
+  #checkov:skip=CKV_AWS_338:Retention is environment-controlled to keep non-production log costs bounded; production can set 365 days.
   count = var.enable_flow_logs ? 1 : 0
 
   name              = "/aws/vpc/${var.name_prefix}/flow"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.logs_kms_key_arn
   tags              = merge(var.tags, { Name = "${var.name_prefix}-flow-logs" })
 }
 
@@ -360,4 +408,3 @@ resource "aws_flow_log" "this" {
   vpc_id          = aws_vpc.this.id
   tags            = merge(var.tags, { Name = "${var.name_prefix}-flow-log" })
 }
-

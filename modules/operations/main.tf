@@ -280,6 +280,10 @@ resource "aws_cloudwatch_metric_alarm" "nat_errors" {
 }
 
 resource "aws_s3_bucket" "audit" {
+  #checkov:skip=CKV_AWS_18:This bucket is the central audit log sink; recursive access logging would require another log account.
+  #checkov:skip=CKV_AWS_144:Cross-region audit replication requires an organization-owned destination region and KMS key.
+  #checkov:skip=CKV_AWS_145:SSE-S3 preserves CloudTrail and Config delivery compatibility in the lab; production adds a service-aware KMS policy.
+  #checkov:skip=CKV2_AWS_62:Audit records are consumed by security tooling, not by an S3 notification target in this lab.
   count = var.enable_cloudtrail || var.enable_config ? 1 : 0
 
   bucket        = local.audit_bucket
@@ -311,6 +315,26 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "audit" {
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "audit" {
+  count = var.enable_cloudtrail || var.enable_config ? 1 : 0
+
+  bucket = aws_s3_bucket.audit[0].id
+
+  rule {
+    id     = "retain-audit-records"
+    status = "Enabled"
+    filter {}
+
+    expiration {
+      days = 2555
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
     }
   }
 }
@@ -406,6 +430,9 @@ resource "aws_s3_bucket_policy" "audit" {
 }
 
 resource "aws_cloudtrail" "this" {
+  #checkov:skip=CKV_AWS_35:KMS requires a CloudTrail service-aware key policy; production promotion adds that policy with the audit account.
+  #checkov:skip=CKV_AWS_252:Security notifications are routed by the module alarms; direct CloudTrail SNS delivery is not used.
+  #checkov:skip=CKV2_AWS_10:CloudTrail is retained in S3; CloudWatch Logs streaming is a production SIEM integration.
   count = var.enable_cloudtrail ? 1 : 0
 
   name                          = "${var.name_prefix}-trail"
@@ -518,6 +545,7 @@ resource "aws_config_config_rule" "s3_public_read" {
 }
 
 resource "aws_guardduty_detector" "this" {
+  #checkov:skip=CKV2_AWS_3:This repository targets a single account; organization-wide GuardDuty is owned by the AWS Organizations security account.
   count = var.enable_guardduty ? 1 : 0
 
   enable = true

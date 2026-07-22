@@ -136,6 +136,17 @@ variable "log_retention_days" {
   }
 }
 
+variable "logs_kms_key_arn" {
+  description = "Flow Logs 的 CloudWatch Logs KMS Key ARN。"
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^arn:", var.logs_kms_key_arn))
+    error_message = "logs_kms_key_arn 必须是 ARN。"
+  }
+}
+
 variable "tags" {
   description = "公共标签。"
   type        = map(string)
@@ -147,4 +158,3 @@ variable "tags" {
     error_message = "标签键和值不得为空。"
   }
 }
-

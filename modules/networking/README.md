@@ -6,5 +6,6 @@
 
 ## 关键输入
 
-`availability_zones` 和三组 Subnet CIDR 必须长度一致。根模块负责这项跨变量校验。Interface Endpoint 按 AZ 持续收费，应显式开启。
+`availability_zones` 和三组 Subnet CIDR 必须长度一致。根模块负责这项跨变量校验。`logs_kms_key_arn` 为 Flow Logs 提供客户管理 KMS Key。Interface Endpoint 按 AZ 持续收费，应显式开启。
 
+应用 Security Group 只允许 HTTPS、VPC Resolver DNS、PostgreSQL 与 Redis 定向出站；默认 Security Group 由 Terraform 接管并保持无规则。

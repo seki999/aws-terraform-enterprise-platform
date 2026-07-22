@@ -26,6 +26,7 @@ module "networking" {
   enable_vpc_endpoints     = var.enable_vpc_endpoints
   enable_flow_logs         = true
   log_retention_days       = var.log_retention_days
+  logs_kms_key_arn         = module.identity.logs_kms_key_arn
   tags                     = local.common_tags
 }
 
@@ -122,6 +123,8 @@ module "compute" {
   ecs_desired_count         = var.ecs_desired_count
   instance_type             = var.instance_type
   log_retention_days        = var.log_retention_days
+  kms_key_arn               = module.identity.data_kms_key_arn
+  logs_kms_key_arn          = module.identity.logs_kms_key_arn
   tags                      = local.common_tags
 }
 

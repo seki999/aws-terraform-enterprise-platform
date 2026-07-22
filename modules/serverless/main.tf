@@ -83,10 +83,12 @@ resource "aws_sns_topic_subscription" "email" {
 }
 
 resource "aws_cloudwatch_log_group" "lambda" {
+  #checkov:skip=CKV_AWS_338:Retention is environment-controlled to keep non-production log costs bounded; production can set 365 days.
   for_each = var.enable_serverless ? toset(["validator", "consumer", "step-worker"]) : toset([])
 
   name              = "/aws/lambda/${var.name_prefix}-${each.value}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_arn
   tags              = merge(var.tags, { Name = "${var.name_prefix}-${each.value}-logs" })
 }
 
@@ -101,18 +103,26 @@ resource "aws_lambda_layer_version" "common" {
 }
 
 resource "aws_lambda_function" "validator" {
+  #checkov:skip=CKV_AWS_116:API Gateway invokes this synchronously, so failures return to the caller instead of a Lambda DLQ.
+  #checkov:skip=CKV_AWS_117:The function only calls public AWS APIs and does not access VPC resources.
+  #checkov:skip=CKV_AWS_272:Code signing requires organization-owned signing profiles and is a production supply-chain control.
   count = var.enable_serverless ? 1 : 0
 
-  function_name    = "${var.name_prefix}-validator"
-  role             = var.lambda_role_arns["lambda_validator"]
-  runtime          = "python3.13"
-  handler          = "handler.handler"
-  filename         = data.archive_file.validator[0].output_path
-  source_code_hash = data.archive_file.validator[0].output_base64sha256
-  timeout          = 15
-  memory_size      = 256
-  layers           = [aws_lambda_layer_version.common[0].arn]
-  kms_key_arn      = var.kms_key_arn
+  function_name                  = "${var.name_prefix}-validator"
+  role                           = var.lambda_role_arns["lambda_validator"]
+  runtime                        = "python3.13"
+  handler                        = "handler.handler"
+  filename                       = data.archive_file.validator[0].output_path
+  source_code_hash               = data.archive_file.validator[0].output_base64sha256
+  timeout                        = 15
+  memory_size                    = 256
+  reserved_concurrent_executions = 10
+  layers                         = [aws_lambda_layer_version.common[0].arn]
+  kms_key_arn                    = var.kms_key_arn
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -125,18 +135,26 @@ resource "aws_lambda_function" "validator" {
 }
 
 resource "aws_lambda_function" "worker" {
+  #checkov:skip=CKV_AWS_116:Step Functions owns retries and terminal failure handling for this synchronously invoked worker.
+  #checkov:skip=CKV_AWS_117:The function only calls DynamoDB and SNS APIs and does not access VPC resources.
+  #checkov:skip=CKV_AWS_272:Code signing requires organization-owned signing profiles and is a production supply-chain control.
   count = var.enable_serverless ? 1 : 0
 
-  function_name    = "${var.name_prefix}-step-worker"
-  role             = var.lambda_role_arns["lambda_worker"]
-  runtime          = "python3.13"
-  handler          = "handler.handler"
-  filename         = data.archive_file.worker[0].output_path
-  source_code_hash = data.archive_file.worker[0].output_base64sha256
-  timeout          = 60
-  memory_size      = 512
-  layers           = [aws_lambda_layer_version.common[0].arn]
-  kms_key_arn      = var.kms_key_arn
+  function_name                  = "${var.name_prefix}-step-worker"
+  role                           = var.lambda_role_arns["lambda_worker"]
+  runtime                        = "python3.13"
+  handler                        = "handler.handler"
+  filename                       = data.archive_file.worker[0].output_path
+  source_code_hash               = data.archive_file.worker[0].output_base64sha256
+  timeout                        = 60
+  memory_size                    = 512
+  reserved_concurrent_executions = 10
+  layers                         = [aws_lambda_layer_version.common[0].arn]
+  kms_key_arn                    = var.kms_key_arn
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -196,14 +214,17 @@ resource "aws_iam_role_policy" "states" {
 }
 
 resource "aws_cloudwatch_log_group" "states" {
+  #checkov:skip=CKV_AWS_338:Retention is environment-controlled to keep non-production log costs bounded; production can set 365 days.
   count = var.enable_serverless ? 1 : 0
 
   name              = "/aws/vendedlogs/states/${var.name_prefix}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_arn
   tags              = merge(var.tags, { Name = "${var.name_prefix}-states-logs" })
 }
 
 resource "aws_sfn_state_machine" "processing" {
+  #checkov:skip=CKV_AWS_285:ERROR execution logging is enabled while payload logging is intentionally disabled to avoid sensitive-data exposure.
   count = var.enable_serverless ? 1 : 0
 
   name     = "${var.name_prefix}-processing"
@@ -214,6 +235,10 @@ resource "aws_sfn_state_machine" "processing" {
     log_destination        = "${aws_cloudwatch_log_group.states[0].arn}:*"
     include_execution_data = false
     level                  = "ERROR"
+  }
+
+  tracing_configuration {
+    enabled = true
   }
 
   definition = jsonencode({
@@ -252,18 +277,26 @@ resource "aws_sfn_state_machine" "processing" {
 }
 
 resource "aws_lambda_function" "consumer" {
+  #checkov:skip=CKV_AWS_116:The SQS event source uses the queue redrive policy and DLQ rather than a Lambda asynchronous DLQ.
+  #checkov:skip=CKV_AWS_117:The function only calls Step Functions and does not access VPC resources.
+  #checkov:skip=CKV_AWS_272:Code signing requires organization-owned signing profiles and is a production supply-chain control.
   count = var.enable_serverless ? 1 : 0
 
-  function_name    = "${var.name_prefix}-consumer"
-  role             = var.lambda_role_arns["lambda_consumer"]
-  runtime          = "python3.13"
-  handler          = "handler.handler"
-  filename         = data.archive_file.consumer[0].output_path
-  source_code_hash = data.archive_file.consumer[0].output_base64sha256
-  timeout          = 30
-  memory_size      = 256
-  layers           = [aws_lambda_layer_version.common[0].arn]
-  kms_key_arn      = var.kms_key_arn
+  function_name                  = "${var.name_prefix}-consumer"
+  role                           = var.lambda_role_arns["lambda_consumer"]
+  runtime                        = "python3.13"
+  handler                        = "handler.handler"
+  filename                       = data.archive_file.consumer[0].output_path
+  source_code_hash               = data.archive_file.consumer[0].output_base64sha256
+  timeout                        = 30
+  memory_size                    = 256
+  reserved_concurrent_executions = 10
+  layers                         = [aws_lambda_layer_version.common[0].arn]
+  kms_key_arn                    = var.kms_key_arn
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -312,6 +345,7 @@ resource "aws_apigatewayv2_integration" "validator" {
 }
 
 resource "aws_apigatewayv2_route" "jobs" {
+  #checkov:skip=CKV_AWS_309:The lab route is intentionally unauthenticated; production promotion must attach JWT or IAM authorization.
   count = var.enable_serverless ? 1 : 0
 
   api_id    = aws_apigatewayv2_api.jobs[0].id
@@ -320,10 +354,12 @@ resource "aws_apigatewayv2_route" "jobs" {
 }
 
 resource "aws_cloudwatch_log_group" "api" {
+  #checkov:skip=CKV_AWS_338:Retention is environment-controlled to keep non-production log costs bounded; production can set 365 days.
   count = var.enable_serverless ? 1 : 0
 
   name              = "/aws/apigateway/${var.name_prefix}-jobs"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_arn
   tags              = merge(var.tags, { Name = "${var.name_prefix}-api-logs" })
 }
 

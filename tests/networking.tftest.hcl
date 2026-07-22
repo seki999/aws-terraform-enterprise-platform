@@ -18,6 +18,7 @@ run "two_az_low_cost_network" {
     single_nat_gateway       = true
     enable_vpc_endpoints     = false
     enable_flow_logs         = false
+    logs_kms_key_arn         = "arn:aws:kms:ap-northeast-1:123456789012:key/00000000-0000-0000-0000-000000000000"
   }
 
   assert {
@@ -59,6 +60,7 @@ run "production_nat_per_az" {
     single_nat_gateway       = false
     enable_vpc_endpoints     = false
     enable_flow_logs         = false
+    logs_kms_key_arn         = "arn:aws:kms:ap-northeast-1:123456789012:key/00000000-0000-0000-0000-000000000000"
   }
 
   assert {
@@ -66,4 +68,3 @@ run "production_nat_per_az" {
     error_message = "生产策略必须每 AZ 创建一个 NAT Gateway。"
   }
 }
-

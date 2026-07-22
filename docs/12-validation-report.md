@@ -12,10 +12,10 @@
 - FastAPI、容器 Worker、Validator/Consumer/Step Worker Lambda、共享 Layer。
 - 13 类 CloudWatch 告警、Dashboard、Flow Logs、访问日志、CloudTrail、Config、GuardDuty、Backup。
 - 三条 GitHub Actions 工作流、GitHub OIDC Role、CodeBuild/CodePipeline。
-- README、12 份主题文档、7 类 Mermaid 图（全仓共 10 个 Mermaid Block）。
+- README、13 份主题文档、7 类 Mermaid 图（全仓共 10 个 Mermaid Block）。
 - Mock Provider Terraform Test、Python Unit/Contract Test、安全包装脚本和 Makefile。
 
-统计（排除本地缓存）：149 个文件、53 个 Terraform 文件、9 个模块；模块要求的 45 个基础文件无缺项。
+统计（排除本地缓存）：150 个文件、53 个 Terraform 文件、9 个模块；模块要求的 45 个基础文件无缺项。
 
 ## 2. AWS 服务清单
 
@@ -102,6 +102,8 @@
 | dev/staging/prod `init -backend=false` | 三个环境成功；安装 AWS 6.55.0、Random 3.9.0、Archive 2.8.0 |
 | dev/staging/prod `terraform validate` | 三个环境成功且最终无警告 |
 | `terraform test` | 成功：2 passed，0 failed；只用 Mock Provider/Plan |
+| `tflint --recursive` | 成功：TFLint 0.59.1，Terraform Ruleset 无问题 |
+| `checkov -d . --framework terraform --quiet --compact` | 成功：Checkov 3.3.8，573 passed、0 failed；精确例外见 `13-checkov-exceptions.md` |
 | `python -m pytest` | 成功：9 passed |
 | `ruff check application tests` | 成功 |
 | `docker compose config --quiet` | 成功；只证明 Compose 配置可解析 |
@@ -117,8 +119,6 @@
 
 | 工具 | 状态 | 建议安装 |
 | --- | --- | --- |
-| TFLint | 未安装 | `winget install TerraformLinters.TFLint` 或官方 Release |
-| Checkov | 未安装 | `python -m pip install checkov` |
 | Trivy | 未安装 | `winget install AquaSecurity.Trivy` |
 | ShellCheck | 未安装 | 通过 Chocolatey/Scoop/WSL 安装 |
 | Markdownlint | 未安装 | `npm install -g markdownlint-cli` |
@@ -145,7 +145,7 @@
 
 - 代码通过 Provider Schema 验证和 Mock 测试，但没有真实 AWS Plan/Apply，因此尚未验证账号配额、SCP、服务关联 Role、全球命名、Region可用性和最终服务端 API 行为。
 - Docker镜像未构建，因为引擎未运行。
-- TFLint/Checkov/Trivy/ShellCheck/Markdownlint 本地未运行，需在提交/部署前补跑。
+- Trivy/ShellCheck/Markdownlint 本地未运行，需在提交/部署前补跑。
 - 自定义域名需要 Hosted Zone 所有权；CloudFront ACM 在 us-east-1。
 - CodeStar Connection 创建后仍需人工授权。
 - Terraform生成的数据库/Redis密码会存在于加密 State；`sensitive` 不是 State 脱敏。
@@ -182,7 +182,7 @@ terraform show tfplan
 ## 7. 推荐下一步
 
 1. 启动 Docker Desktop，重跑 API Image Build。
-2. 安装并运行 TFLint、Checkov、Trivy、ShellCheck、Markdownlint。
+2. 安装并运行 Trivy、ShellCheck、Markdownlint；继续在 CI 固定运行 TFLint 与 Checkov。
 3. 在专用 AWS Sandbox 创建预算与 Plan Role。
 4. 人工审查 Bootstrap Plan 后，明确授权才创建 Backend。
 5. 使用低成本 dev tfvars 生成 Plan。
