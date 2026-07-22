@@ -1,0 +1,17 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - terraform version
+  build:
+    commands:
+      - terraform fmt -check -recursive
+      - terraform -chdir=bootstrap/backend init -backend=false -input=false
+      - terraform -chdir=bootstrap/backend validate
+      - terraform -chdir=environments/dev init -backend=false -input=false
+      - terraform -chdir=environments/dev validate
+artifacts:
+  files:
+    - docs/12-validation-report.md
+

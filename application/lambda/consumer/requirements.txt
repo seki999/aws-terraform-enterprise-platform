@@ -1,0 +1,2 @@
+# boto3 由 AWS Lambda Python Runtime 提供；共享日志代码由 Lambda Layer 提供。
+

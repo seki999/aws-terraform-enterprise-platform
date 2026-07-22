@@ -1,0 +1,13 @@
+project_name = "aws-terraform-enterprise-platform"
+aws_region  = "ap-northeast-1"
+
+# 必须在部署前替换为全局唯一名称；设为 null 时使用随机后缀。
+bucket_name_override = null
+force_destroy         = false
+
+tags = {
+  Owner      = "platform-team"
+  CostCenter = "learning"
+  Repository = "aws-terraform-enterprise-platform"
+}
+

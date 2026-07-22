@@ -1,0 +1,66 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - "**/*.tf"
+      - "**/*.tfvars"
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ap-northeast-1
+      - name: Prepare backend configuration
+        env:
+          STATE_BUCKET: ${{ vars.TERRAFORM_STATE_BUCKET }}
+          STATE_KMS_KEY_ARN: ${{ vars.TERRAFORM_STATE_KMS_KEY_ARN }}
+        run: |
+          cp environments/$ENVIRONMENT/backend.hcl.example environments/$ENVIRONMENT/backend.hcl
+          sed -i "s|REPLACE_WITH_BOOTSTRAP_BUCKET|$STATE_BUCKET|" environments/$ENVIRONMENT/backend.hcl
+          sed -i "s|REPLACE_WITH_BOOTSTRAP_KMS_KEY_ARN|$STATE_KMS_KEY_ARN|" environments/$ENVIRONMENT/backend.hcl
+      - name: Initialize
+        run: terraform -chdir=environments/$ENVIRONMENT init -backend-config=backend.hcl -input=false
+      - name: Validate
+        run: terraform -chdir=environments/$ENVIRONMENT validate
+      - name: Plan
+        run: |
+          set +e
+          terraform -chdir=environments/$ENVIRONMENT plan -input=false -var-file=terraform.tfvars.example -out=tfplan -detailed-exitcode
+          code=$?
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          exit 0
+        id: plan
+      - name: Render safe text summary
+        run: terraform -chdir=environments/$ENVIRONMENT show -no-color tfplan > plan-summary.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ env.ENVIRONMENT }}-${{ github.sha }}
+          path: |
+            environments/${{ env.ENVIRONMENT }}/tfplan
+            plan-summary.txt
+          retention-days: 1
